@@ -1,48 +1,57 @@
-import numpy as np
-from flask import Flask, request, render_template
+# app.py
+from flask import Flask, render_template, request
 import pickle
+import numpy as np
+import os
 
-#Create an app object using the Flask class. 
 app = Flask(__name__)
 
-#Load the trained model. (Pickle file)
-model = pickle.load(open('models/model.pkl', 'rb'))
+# Ruta al modelo
+MODEL_PATH = os.path.join("models", "model.pkl")
 
-#Define the route to be home. 
-#The decorator below links the relative route of the URL to the function it is decorating.
-#Here, home function is with '/', our root directory. 
-#Running the app sends us to index.html.
-#Note that render_template means it looks for the file in the templates folder. 
+# Cargar el modelo una sola vez al iniciar la app
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(f"Modelo no encontrado en {MODEL_PATH}. ")
+with open(MODEL_PATH, "rb") as f:
+    model = pickle.load(f)
 
-#use the route() decorator to tell Flask what URL should trigger our function.
-@app.route('/')
-def home():
-    return render_template('index.html')
+@app.route("/", methods=["GET"])
+def index():
+    # Mostrar la plantilla sin resultado al inicio
+    return render_template("index.html", prediction=None)
 
-#You can use the methods argument of the route() decorator to handle different HTTP methods.
-#GET: A GET message is send, and the server returns data
-#POST: Used to send HTML form data to the server.
-#Add Post method to the decorator to allow for form submission. 
-#Redirect to /predict page with the output
-@app.route('/predict',methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
+    try:
+        # Obtener valores del formulario
+        bici = request.form.get("porcentaje_ciclistas", "")
+        fuma = request.form.get("porcentaje_fumadores", "")
 
-    int_features = [float(x) for x in request.form.values()] #Convert string inputs to float.
-    features = [np.array(int_features)]  #Convert to the form [[a, b]] for input to the model
-    prediction = model.predict(features)  # features Must be in the form [[a, b]]
+        # Validaciones básicas
+        if bici == "" or fuma == "":
+            return render_template("index.html", prediction="Por favor ingresa ambos porcentajes.")
 
-    output = round(prediction[0], 2)
+        # Convertir a float
+        bici_val = float(bici)
+        fuma_val = float(fuma)
 
-    return render_template('index.html', prediction_text='Percent with heart disease is {}'.format(output))
+        # Preparar entrada para el modelo: forma (1,2)
+        X = np.array([[bici_val, fuma_val]])
 
+        # Predicción
+        pred = model.predict(X)[0]
 
-#When the Python interpreter reads a source file, it first defines a few special variables. 
-#For now, we care about the __name__ variable.
-#If we execute our code in the main program, like in our case here, it assigns
-# __main__ as the name (__name__). 
-#So if we want to run our code right here, we can check if __name__ == __main__
-#if so, execute it here. 
-#If we import this file (module) to another file then __name__ == app (which is the name of this python file).
+        # Formatear resultado
+        resultado = round(float(pred), 3)
+
+        return render_template("index.html", prediction=f"Predicción (porcentaje estimado de enfermedad cardíaca): {resultado}")
+
+    except ValueError:
+        return render_template("index.html", prediction="Valores numéricos inválidos.")
+    except Exception as e:
+        # Mostrar error simple en la UI para depuración
+        return render_template("index.html", prediction=f"Error en el servidor: {e}")
 
 if __name__ == "__main__":
-    app.run()
+    # Modo debug para desarrollo
+    app.run(debug=True)
